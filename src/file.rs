@@ -129,8 +129,10 @@ pub fn parse_fileset(src: &mut io::Read) -> Result<Vec<(String, File, Option<Vec
 }
 
 fn chmod(path: &str, mode: &str) -> io::Result<()> {
-    match format!("0o{}", mode).parse::<u32>() {
-        Ok(n) if n < 0o10000 => fs::set_permissions(path, fs::Permissions::from_mode(n)),
+    match isize::from_str_radix(mode, 8) {
+        Ok(n) if n > 0 && n < 0o10000 => {
+            fs::set_permissions(path, fs::Permissions::from_mode(n as u32))
+        }
         _ => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!("Not a valid mode {}", mode),
