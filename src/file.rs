@@ -55,69 +55,77 @@ fn encoding_identity() -> Encoding {
 }
 
 impl File {
-    pub fn write(&self, id: &str) -> Result<(), String> {
+    pub fn decode(&self) -> Result<Option<Vec<u8>>, String> {
         match self.content {
-            Some(ref content) => {
-                let decoded_content;
-                let content = match self.encoding {
-                    Encoding::Identity => Ok(content.as_bytes()),
-                    Encoding::Base64 => match base64::decode(content) {
-                        Ok(content) => {
-                            decoded_content = content;
-                            Ok(decoded_content.as_slice())
-                        }
-                        Err(e) => Err(format!("{}. {}", e, id)),
-                    },
-                };
-                match content {
-                    Ok(content) => match self.write_file(content) {
-                        Ok(_) => Ok(()),
-                        Err(e) => Err(format!("Failed to write file {}: {}", id, e)),
-                    },
-                    Err(e) => Err(e),
-                }
-            }
-            None => match fs::remove_file(&self.path) {
-                Ok(_) => Ok(()),
-                Err(e) => Err(format!("Failed to remove file {}: {:?}", id, e)),
+            Some(ref content) => match self.encoding {
+                Encoding::Identity => Ok(None),
+                Encoding::Base64 => match base64::decode(&content) {
+                    Ok(content) => Ok(Some(content)),
+                    Err(e) => Err(format!("{:?}", e)),
+                },
             },
+            None => Ok(None),
         }
     }
 
-    fn write_file(&self, content: &[u8]) -> Result<(), String> {
-        let write_result = fs::write(&self.path, content.as_ref());
-
-        let chmod_result = match &self.mode {
-            Some(m) => chmod(&self.path, m),
-            None => Ok(()),
-        };
-        let chown_result = match &self.user {
-            Some(u) => chown(&self.path, &u),
-            None => Ok(()),
-        };
-        let chgrp_result = match &self.group {
-            Some(g) => chgrp(&self.path, &g),
-            None => Ok(()),
-        };
-        match (write_result, chmod_result, chown_result, chgrp_result) {
-            (Ok(_), Ok(_), Ok(_), Ok(_)) => Ok(()),
-            _ => Err("Write failed".to_owned()),
+    pub fn update(&self, decoded_content: &Option<Vec<u8>>) -> io::Result<()> {
+        match self.content {
+            Some(ref content) => {
+                match decoded_content {
+                    Some(c) => fs::write(&self.path, c.as_slice()),
+                    None => fs::write(&self.path, content.as_bytes()),
+                }?;
+                if let Some(m) = &self.mode {
+                    chmod(&self.path, m)?;
+                }
+                if let Some(u) = &self.user {
+                    chown(&self.path, &u)?;
+                }
+                if let Some(g) = &self.group {
+                    chgrp(&self.path, &g)?;
+                }
+                Ok(())
+            }
+            None => match fs::remove_file(&self.path) {
+                Ok(()) => Ok(()),
+                Err(e) => match e.kind() {
+                    io::ErrorKind::NotFound => Ok(()),
+                    _ => Err(e),
+                },
+            },
         }
     }
 }
 
-pub fn parse_fileset(src: &mut io::Read) -> Result<HashMap<String, File>, String> {
-    // convert fileset into json and parse into a Fileset
-    match nereon::libucl::ucl_to_json(src) {
-        Ok(s) => match serde_json::from_str::<HashMap<String, HashMap<String, File>>>(&s) {
-            Ok(mut s) => match s.remove("file") {
-                Some(f) => Ok(f),
-                None => Ok(HashMap::new()),
-            },
-            Err(e) => Err(format!("Not a valid fileset: {}", e)),
-        },
-        Err(e) => Err(format!("Not a valid fileset: {:?}", e)),
+pub fn parse_fileset(src: &mut io::Read) -> Result<Vec<(String, File, Option<Vec<u8>>)>, String> {
+    fn decode_fileset(
+        fileset: &mut HashMap<String, File>,
+    ) -> Result<Vec<(String, File, Option<Vec<u8>>)>, String> {
+        // build Vec of (id, File, decoded_content) tuples
+        let mut result = vec![];
+        for (id, f) in fileset.drain() {
+            match f.decode() {
+                Ok(dc) => result.push((id, f, dc)),
+                Err(e) => return Err(e),
+            };
+        }
+        Ok(result)
     }
+
+    // convert UCL into JSON
+    match nereon::libucl::ucl_to_json(src).map_err(|e| format!("{:?}", e)) {
+        Ok(json) => {
+            // convert JSON into Serde::Object
+            match serde_json::from_str::<HashMap<String, HashMap<String, File>>>(&json) {
+                Ok(mut object) => {
+                    // decode "file" member if available or vec![]
+                    decode_fileset(&mut object.remove("file").unwrap_or_default())
+                }
+                Err(e) => Err(format!("{}", e)),
+            }
+        }
+        Err(e) => Err(e),
+    }.map_err(|e| format!("Unable to parse fileset: {}", e))
 }
 
 fn chmod(path: &str, mode: &str) -> io::Result<()> {
