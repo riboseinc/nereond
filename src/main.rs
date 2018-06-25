@@ -22,6 +22,7 @@
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 extern crate base64;
+extern crate libc;
 extern crate nereon;
 extern crate serde_json;
 
@@ -30,9 +31,10 @@ extern crate serde_derive;
 
 use std::collections::HashMap;
 use std::env;
-use std::fs::File;
-use std::io::prelude::*;
-use std::path::{Path, PathBuf};
+use std::ffi::CString;
+use std::fs;
+use std::io;
+use std::os::unix::prelude::PermissionsExt;
 
 #[derive(Deserialize)]
 struct Config {
@@ -40,7 +42,7 @@ struct Config {
 }
 
 #[derive(Deserialize, Debug)]
-struct NereonFile {
+struct File {
     path: String,
     user: Option<String>,
     group: Option<String>,
@@ -85,23 +87,20 @@ fn main() {
 
     // get the fileset from file/env
     let fileset = match config.fileset_file {
-        Some(n) => match File::open(&n) {
-            Ok(mut f) => {
-                let mut s = String::new();
-                match f.read_to_string(&mut s) {
-                    Ok(_) => s,
-                    Err(e) => fail(format!("Failed to read fileset file {}: {:?}.", n, e)),
-                }
-            }
-            Err(e) => fail(format!("Couldn't open fileset file {}; {:?}.", n, e)),
+        Some(n) => match fs::read_to_string(&n) {
+            Ok(s) => s,
+            Err(e) => fail(format!("Failed to read fileset file {}: {:?}.", n, e)),
         },
         _ => {
             match env::var("NEREON_FILESET") {
                 Ok(s) => {
                     // env var is base64 encoded
-                    match base64_decode(&s) {
-                        Ok(s) => s,
-                        Err(e) => fail(format!("{} in env[NEREON_FILESET].", e)),
+                    match base64::decode(&s) {
+                        Ok(bs) => match String::from_utf8(bs) {
+                            Ok(s) => s,
+                            Err(_) => fail("Invalid utf8 data in env[NEREON_FILESET]".to_owned()),
+                        },
+                        Err(_) => fail("Invalid base64 data in env[NEREON_FILESET]".to_owned()),
                     }
                 }
                 Err(_) => fail("No fileset from args or environment.".to_owned()),
@@ -113,7 +112,7 @@ fn main() {
     let fileset = match nereon::libucl::ucl_to_json(&mut fileset.as_bytes()) {
         Ok(s) => {
             println!("{:?}", s);
-            match serde_json::from_str::<HashMap<String, HashMap<String, NereonFile>>>(&s) {
+            match serde_json::from_str::<HashMap<String, HashMap<String, File>>>(&s) {
                 Ok(mut s) => match s.remove("file") {
                     Some(f) => f,
                     _ => HashMap::new(),
@@ -131,27 +130,27 @@ fn main() {
             Some(ref content) => {
                 // create/overwrite file
                 let decoded_content;
-                let content = match Encoding::Identity {
-                    Encoding::Identity => Ok(content),
-                    Encoding::Base64 => match base64_decode(content) {
+                let content = match f.encoding {
+                    Encoding::Identity => Ok(content.as_bytes()),
+                    Encoding::Base64 => match base64::decode(content) {
                         Ok(content) => {
                             decoded_content = content;
-                            Ok(&decoded_content)
+                            Ok(decoded_content.as_slice())
                         }
-                        Err(e) => Err(format!("{} found in content for {}", e, id)),
+                        Err(e) => Err(format!("{}. {}", e, id)),
                     },
                 };
                 match content {
-                    Ok(content) => match write_file(&Path::new(&f.path), &content, &f.mode) {
+                    Ok(content) => match write_file(&f, content) {
                         Ok(_) => Ok(()),
                         Err(e) => Err(format!("Failed to write file {}: {}", id, e)),
                     },
                     Err(e) => Err(e),
                 }
             }
-            None => match delete_file(&Path::new(&f.path)) {
+            None => match fs::remove_file(&f.path) {
                 Ok(_) => Ok(()),
-                Err(e) => Err(e),
+                Err(e) => Err(format!("Failed to remove file {}: {:?}", id, e)),
             },
         };
 
@@ -161,38 +160,78 @@ fn main() {
     }
 }
 
-fn delete_file(path: &Path) -> Result<(), String> {
-    Ok(())
-}
+fn write_file(file: &File, content: &[u8]) -> Result<(), String> {
+    let write_result = fs::write(&file.path, content.as_ref());
 
-fn write_file(path: &Path, content: &str, mode: &Option<String>) -> Result<(), String> {
-    Ok(())
-}
-
-fn full_path(path: &mut Path) -> Result<PathBuf, String> {
-    let path = path.to_path_buf();
-    match path.is_relative() {
-        true => {
-            match env::current_dir() {
-                Ok(p) => Ok(PathBuf::from(p).join(&path)),
-                Err(_) => Err("Couldn't get canonical file path".to_owned()),
-            }
-        },
-        false => Ok(path)
-    }
-}
-
-fn base64_decode(s: &str) -> Result<String, String> {
-    match base64::decode(s) {
-        Ok(bs) => match String::from_utf8(bs) {
-            Ok(s) => Ok(s),
-            Err(_) => Err("Invalid utf8 data".to_owned()),
-        },
-        Err(_) => Err("Invalid base64 data".to_owned()),
+    let chmod_result = match &file.mode {
+        Some(m) => chmod(&file.path, m),
+        None => Ok(()),
+    };
+    let chown_result = match &file.user {
+        Some(u) => chown(&file.path, &u),
+        None => Ok(()),
+    };
+    let chgrp_result = match &file.group {
+        Some(g) => chgrp(&file.path, &g),
+        None => Ok(()),
+    };
+    match (write_result, chmod_result, chown_result, chgrp_result) {
+        (Ok(_), Ok(_), Ok(_), Ok(_)) => Ok(()),
+        _ => Err("Write failed".to_owned()),
     }
 }
 
 fn fail<T>(e: String) -> T {
     eprintln!("{}: {}", env::args().next().unwrap(), e);
     std::process::exit(1);
+}
+
+fn chmod(path: &str, mode: &str) -> io::Result<()> {
+    match format!("0o{}", mode).parse::<u32>() {
+        Ok(n) if n < 0o10000 => fs::set_permissions(path, fs::Permissions::from_mode(n)),
+        _ => Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("Not a valid mode {}", mode),
+        )),
+    }
+}
+
+fn chown(path: &str, user: &str) -> io::Result<()> {
+    fn get_uid(user: &str) -> io::Result<u32> {
+        let passwd = unsafe { libc::getpwnam(CString::new(user.to_owned()).unwrap().as_ptr()) };
+        match !passwd.is_null() {
+            true => Ok(unsafe { (*passwd).pw_uid }),
+            false => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("No such user {}", user),
+            )),
+        }
+    }
+
+    let uid = get_uid(user)?;
+    let path = CString::new(path.to_owned()).unwrap();
+    match unsafe { libc::chown(path.as_ptr(), uid, -1 as i32 as libc::gid_t) } {
+        0 => Ok(()),
+        _ => Err(io::Error::last_os_error()),
+    }
+}
+
+fn chgrp(path: &str, group: &str) -> io::Result<()> {
+    fn get_gid(group: &str) -> io::Result<u32> {
+        let gr = unsafe { libc::getgrnam(CString::new(group.to_owned()).unwrap().as_ptr()) };
+        match !gr.is_null() {
+            true => Ok(unsafe { (*gr).gr_gid }),
+            false => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!("No such group {}", group),
+            )),
+        }
+    }
+
+    let gid = get_gid(group)?;
+    let path = CString::new(path.to_owned()).unwrap();
+    match unsafe { libc::chown(path.as_ptr(), -1 as i32 as libc::gid_t, gid) } {
+        0 => Ok(()),
+        _ => Err(io::Error::last_os_error()),
+    }
 }
