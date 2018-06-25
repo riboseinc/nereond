@@ -95,6 +95,13 @@ fn main() {
             eprintln!("Failed to update {}: {}", id, e);
         }
     }
+
+    // At this point we're initialized: ie written an initial set of configs.
+    // To signal this we either fork and continue to listen for configuration updates
+    // or simply exit.
+
+    // Either way, control should return to the process spawner which now can start
+    // any processes dependent on nereond for configuration.
 }
 
 fn fail<T>(e: String) -> T {
