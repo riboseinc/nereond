@@ -4,6 +4,10 @@ pipeline {
         stage("Test and Build") {
             environment {
                 CARGO = "~/.cargo/bin/cargo"
+                OAUTH = credentials("GitHub")
+            }
+            when {
+                 branch 'master'
             }
             stages {
                 stage("Debian") {
@@ -22,7 +26,8 @@ pipeline {
                         sh '''
                             LIBC_VERSION=$(ldd --version | head -n1 | sed -r 's/(.* )//')
                             mkdir -p assets
-                            tar -C target/release -czf assets/nereond-$LIBC_VERSION.tar.gz nereond
+                            tar -C target/release -czf assets/nereond-libc-$LIBC_VERSION.tar.gz nereond
+                            ci/release.sh riboseinc/nereond
                         '''
                     }
                 }
@@ -42,24 +47,11 @@ pipeline {
                         sh '''
                             LIBC_VERSION=$(ldd --version | head -n1 | sed -r 's/(.* )//')
                             mkdir -p assets
-                            tar -C target/release -czf assets/nereond-$LIBC_VERSION.tar.gz nereond
+                            tar -C target/release -czf assets/nereond-libc-$LIBC_VERSION.tar.gz nereond
+                            ci/release.sh riboseinc/nereond
                         '''
                     }
                 }
-            }
-        }
-        stage("Upload Assets") {
-            agent any
-            when {
-                 branch 'master'
-            }
-            environment {
-                OAUTH = credentials("GitHub")
-            }
-            steps {
-                sh '''
-                    ci/release.sh riboseinc/nereond
-                '''
             }
         }
     }
