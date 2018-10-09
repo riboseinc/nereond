@@ -1,12 +1,12 @@
-file "openvpn-main-config" {
-  path = "/etc/openvpn/openvpn.conf"
-  mode = "0400"
-  user = "openvpn"
-  group = "openvpn"
+file openvpn-main-config {
+  path /etc/openvpn/openvpn.conf
+  mode 0400
+  user openvpn
+  group openvpn
   # Full config from https://github.com/OpenVPN/openvpn/blob/master/sample/sample-config-files/server.conf
-  encoding = "identity"
-  content = <<EOF
-proto udp
+  encoding identity
+  write_on_start = true
+  content "proto udp
 dev tun
 dh dh2048.pem
 server 10.8.0.0 255.255.255.0
@@ -18,44 +18,36 @@ persist-key
 persist-tun
 status openvpn-status.log
 verb 3
-explicit-exit-notify 1
-EOF
-  write_on_start = true
+explicit-exit-notify 1"
 }
 
-file "openvpn-ca-cert" {
-  path = "/etc/openvpn/ca.crt"
-  mode = "0400"
-  user = "openvpn"
-  group = "openvpn"
-  content = <<EOF
-===== BEGIN RSA KEY =====
-...
-EOF
+file openvpn-ca-cert {
+  path /etc/openvpn/ca.crt
+  mode 0400
+  user openvpn
+  group openvpn
+  content = "===== BEGIN RSA KEY =====
+..."
 }
 
-file "openvpn-server-cert" {
-  path = "/etc/openvpn/server.crt"
-  mode = "0400"
-  user = "openvpn"
-  group = "openvpn"
-  content = <<EOF
-===== BEGIN RSA KEY =====
-...
-EOF
+file openvpn-server-cert {
+  path /etc/openvpn/server.crt
+  mode 0400
+  user openvpn
+  group openvpn
+  content "===== BEGIN RSA KEY =====
+..."
 }
 
-file "openvpn-server-key" {
-  path = "/etc/openvpn/server.key"
-  mode = "0400"
-  user = "openvpn"
-  group = "openvpn"
-  content = <<EOF
-===== BEGIN RSA KEY =====
-...
-EOF
+file openvpn-server-key {
+  path /etc/openvpn/server.key
+  mode 0400
+  user openvpn
+  group openvpn
+  content = "===== BEGIN RSA KEY =====
+..."
 }
 
-file "delete-me" {
-  path = "/etc/delete-me"
+file delete-me {
+  path /etc/delete-me
 }
