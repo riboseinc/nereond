@@ -76,8 +76,7 @@ pub fn nereond() -> Result<(), String> {
     );
 
     let config = nereon::configure::<Config, _, _>(&nos, env::args()).unwrap();
-    println!("{:?}", config);
-    println!("{:?}", env::var("NEREON_FILESET"));
+
     // get the fileset from file/env
     config
         .fileset_file
@@ -88,7 +87,7 @@ pub fn nereond() -> Result<(), String> {
                     || Err("No fileset from args or environment.".to_owned()),
                     |s| {
                         base64::decode(&s)
-                            .map_err(|_| format!("Invalid base64 data in env[NEREON_FILESET] {}", s))
+                            .map_err(|_| "Invalid base64 data in env[NEREON_FILESET]".to_owned())
                             .and_then(|bs| {
                                 String::from_utf8(bs).map_err(|_| {
                                     "Invalid utf8 data in env[NEREON_FILESET]".to_owned()
