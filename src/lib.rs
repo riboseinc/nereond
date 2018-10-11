@@ -45,6 +45,7 @@ const APPNAME: &str = env!("CARGO_PKG_NAME");
 #[derive(FromValue)]
 struct Config {
     fileset_file: Option<String>,
+    fileset_env: Option<String>,
 }
 
 pub fn nereond() -> Result<(), String> {
@@ -61,11 +62,13 @@ pub fn nereond() -> Result<(), String> {
             env NEREON_FILESET_FILE
             hint FILE
             usage "File containing a nereon fileset"
+            node [fileset_file]
         }},
         option fileset {{
             env NEREON_FILESET
             hint FILE
             usage "Fileset as environment variable"
+            node [fileset_env]
         }}"#,
         AUTHORS, LICENSE, APPNAME, VERSION
     );
@@ -75,11 +78,12 @@ pub fn nereond() -> Result<(), String> {
     // get the fileset from file/env
     config
         .fileset_file
+        .as_ref()
         .map_or_else(
             || {
-                env::var("NEREON_FILESET")
-                    .map_err(|_| "No fileset from args or environment.".to_owned())
-                    .and_then(|s| {
+                config.fileset_env.as_ref().map_or_else(
+                    || Err("No fileset from args or environment.".to_owned()),
+                    |s| {
                         base64::decode(&s)
                             .map_err(|_| "Invalid base64 data in env[NEREON_FILESET]".to_owned())
                             .and_then(|bs| {
@@ -87,7 +91,8 @@ pub fn nereond() -> Result<(), String> {
                                     "Invalid utf8 data in env[NEREON_FILESET]".to_owned()
                                 })
                             })
-                    })
+                    },
+                )
             },
             |file| {
                 fs::read_to_string(&file)
