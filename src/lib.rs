@@ -10,7 +10,7 @@
 //    documentation and/or other materials provided with the distribution.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NO/T
+// ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 // LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
 // A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
 // OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
@@ -21,9 +21,98 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-#[macro_use]
-extern crate serde_derive;
+extern crate base64;
+extern crate libc;
+extern crate nereon;
 
-pub use file::{parse_fileset, Encoding, File};
+#[macro_use]
+extern crate nereon_derive;
+
+#[macro_use]
+extern crate log;
 
 mod file;
+
+use nereon::{FromValue, Value};
+use std::env;
+use std::fs;
+
+const VERSION: &str = env!("CARGO_PKG_VERSION");
+const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
+const LICENSE: &str = "BSD-2-Clause";
+const APPNAME: &str = env!("CARGO_PKG_NAME");
+
+#[derive(Debug, FromValue)]
+struct Config {
+    fileset_file: Option<String>,
+    fileset_env: Option<String>,
+}
+
+pub fn nereond() -> Result<(), String> {
+    let nos = format!(
+        r#"
+        authors ["{}"]
+        license "{}"
+        name "{}"
+        version {}
+        option fileset_file {{
+            flags [takesvalue]
+            short f
+            long fileset
+            env NEREON_FILESET_FILE
+            hint FILE
+            usage "File containing a nereon fileset"
+            key [fileset_file]
+        }},
+        option fileset {{
+            flags [takesvalue]
+            long fileset-env
+            env NEREON_FILESET
+            hint FILESET
+            usage "Fileset as environment variable"
+            key [fileset_env]
+        }}"#,
+        AUTHORS, LICENSE, APPNAME, VERSION
+    );
+
+    let config = nereon::configure::<Config, _, _>(&nos, env::args()).unwrap();
+
+    // get the fileset from file/env
+    config
+        .fileset_file
+        .as_ref()
+        .map_or_else(
+            || {
+                config.fileset_env.as_ref().map_or_else(
+                    || Err("No fileset from args or environment.".to_owned()),
+                    |s| {
+                        base64::decode(&s)
+                            .map_err(|_| "Invalid base64 data in env[NEREON_FILESET]".to_owned())
+                            .and_then(|bs| {
+                                String::from_utf8(bs).map_err(|_| {
+                                    "Invalid utf8 data in env[NEREON_FILESET]".to_owned()
+                                })
+                            })
+                    },
+                )
+            },
+            |file| {
+                fs::read_to_string(&file)
+                    .map_err(|e| format!("Failed to read fileset file {}: {:?}.", file, e))
+            },
+        ).and_then(|fileset| file::parse_fileset(&mut fileset.as_bytes()))
+        .map(|fileset| {
+            fileset.iter().for_each(|(id, (f, decoded_content))| {
+                f.update(decoded_content)
+                    .map_err(|e| warn!("Failed to update {}: {}", id, e))
+                    .ok();
+            })
+        })
+
+    // At this point we're initialized: ie written an initial set of configs.
+    // To signal this we either fork and continue to listen for configuration updates
+    // or simply exit.
+
+    // Either way, control should return to the process spawner which now can start
+    // any processes dependent on nereond for configuration.
+}

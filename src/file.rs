@@ -10,7 +10,7 @@
 //    documentation and/or other materials provided with the distribution.
 //
 // THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NO/T
+// ``AS IS'' AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
 // LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
 // A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
 // OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
@@ -21,111 +21,88 @@
 // (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 // OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-extern crate base64;
-extern crate libc;
-extern crate nereon;
-extern crate serde_json;
-
+use base64;
+use libc;
+use nereon::{self, FromValue, Value};
 use std::collections::HashMap;
 use std::ffi::CString;
 use std::fs;
 use std::io;
 use std::os::unix::prelude::PermissionsExt;
 
-#[derive(Deserialize, Debug)]
+#[derive(FromValue, Debug)]
 pub struct File {
     pub path: String,
     pub user: Option<String>,
     pub group: Option<String>,
     pub mode: Option<String>,
     pub content: Option<String>,
-    #[serde(default = "encoding_identity")]
-    pub encoding: Encoding,
+    pub encoding: Option<Encoding>,
 }
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "lowercase")]
+#[derive(FromValue, Debug)]
 pub enum Encoding {
-    Identity,
     Base64,
 }
 
-fn encoding_identity() -> Encoding {
-    Encoding::Identity
-}
-
 impl File {
-    pub fn decode(&self) -> Result<Option<Vec<u8>>, String> {
-        match self.content {
-            Some(ref content) => match self.encoding {
-                Encoding::Identity => Ok(None),
-                Encoding::Base64 => match base64::decode(&content) {
-                    Ok(content) => Ok(Some(content)),
-                    Err(e) => Err(format!("{:?}", e)),
-                },
+    pub fn decode(&self) -> Result<Vec<u8>, String> {
+        self.content.as_ref().map_or_else(
+            || Ok(Vec::new()),
+            |ref content| {
+                self.encoding.as_ref().map_or_else(
+                    || Ok(content.bytes().collect()),
+                    |encoding| match encoding {
+                        Encoding::Base64 => {
+                            base64::decode(&content).map_err(|e| format!("{:?}", e))
+                        }
+                    },
+                )
             },
-            None => Ok(None),
-        }
+        )
     }
 
-    pub fn update(&self, decoded_content: &Option<Vec<u8>>) -> io::Result<()> {
-        match self.content {
-            Some(ref content) => {
-                match decoded_content {
-                    Some(c) => fs::write(&self.path, c.as_slice()),
-                    None => fs::write(&self.path, content.as_bytes()),
-                }?;
-                if let Some(m) = &self.mode {
-                    chmod(&self.path, m)?;
-                }
-                if let Some(u) = &self.user {
-                    chown(&self.path, &u)?;
-                }
-                if let Some(g) = &self.group {
-                    chgrp(&self.path, &g)?;
-                }
-                Ok(())
-            }
-            None => match fs::remove_file(&self.path) {
-                Ok(()) => Ok(()),
-                Err(e) => match e.kind() {
+    pub fn update(&self, decoded_content: &[u8]) -> io::Result<()> {
+        self.content.as_ref().map_or_else(
+            || {
+                fs::remove_file(&self.path).or_else(|e| match e.kind() {
                     io::ErrorKind::NotFound => Ok(()),
                     _ => Err(e),
-                },
+                })
             },
-        }
+            |_| {
+                let update = |v: &Option<String>, f: fn(&str, &str) -> io::Result<()>| {
+                    v.as_ref().map_or_else(|| Ok(()), |v| f(&self.path, v))
+                };
+                fs::write(&self.path, decoded_content)
+                    .and_then(|_| update(&self.mode, chmod))
+                    .and_then(|_| update(&self.user, chown))
+                    .and_then(|_| update(&self.group, chgrp))
+            },
+        )
     }
 }
 
-pub fn parse_fileset(src: &mut io::Read) -> Result<Vec<(String, File, Option<Vec<u8>>)>, String> {
-    fn decode_fileset(
-        fileset: &mut HashMap<String, File>,
-    ) -> Result<Vec<(String, File, Option<Vec<u8>>)>, String> {
-        // build Vec of (id, File, decoded_content) tuples
-        let mut result = vec![];
-        for (id, f) in fileset.drain() {
-            match f.decode() {
-                Ok(dc) => result.push((id, f, dc)),
-                Err(e) => return Err(e),
-            };
-        }
-        Ok(result)
-    }
+pub fn parse_fileset(src: &mut io::Read) -> Result<HashMap<String, (File, Vec<u8>)>, String> {
+    let mut fileset = String::new();
+    src.read_to_string(&mut fileset)
+        .map_err(|e| format!("{:?}", e))?;
 
-    // convert UCL into JSON
-    match nereon::libucl::ucl_to_json(src).map_err(|e| format!("{:?}", e)) {
-        Ok(json) => {
-            // convert JSON into Serde::Object
-            match serde_json::from_str::<HashMap<String, HashMap<String, File>>>(&json) {
-                Ok(mut object) => {
-                    // decode "file" member if available or vec![]
-                    decode_fileset(&mut object.remove("file").unwrap_or_default())
-                }
-                Err(e) => Err(format!("{}", e)),
-            }
-        }
-        Err(e) => Err(e),
-    }.map_err(|e| format!("Unable to parse fileset: {}", e))
+    nereon::parse_noc::<HashMap<String, HashMap<String, File>>>(&fileset)
+        .map_err(|e| format!("{:?}", e))
+        .and_then(|mut fileset| {
+            fileset.get_mut("file").map_or_else(
+                || Ok(HashMap::new()),
+                |fileset| {
+                    fileset.drain().try_fold(HashMap::new(), |mut v, (id, f)| {
+                        f.decode().map(|d| {
+                            v.insert(id, (f, d));
+                            v
+                        })
+                    })
+                },
+            )
+        })
 }
 
 fn chmod(path: &str, mode: &str) -> io::Result<()> {
@@ -142,13 +119,15 @@ fn chmod(path: &str, mode: &str) -> io::Result<()> {
 
 fn chown(path: &str, user: &str) -> io::Result<()> {
     fn get_uid(user: &str) -> io::Result<u32> {
-        let passwd = unsafe { libc::getpwnam(CString::new(user.to_owned()).unwrap().as_ptr()) };
-        match !passwd.is_null() {
-            true => Ok(unsafe { (*passwd).pw_uid }),
-            false => Err(io::Error::new(
+        let cuser = CString::new(user.to_owned()).unwrap();
+        let passwd = unsafe { libc::getpwnam(cuser.as_ptr()) };
+        if !passwd.is_null() {
+            Ok(unsafe { (*passwd).pw_uid })
+        } else {
+            Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("No such user {}", user),
-            )),
+            ))
         }
     }
 
@@ -162,13 +141,15 @@ fn chown(path: &str, user: &str) -> io::Result<()> {
 
 fn chgrp(path: &str, group: &str) -> io::Result<()> {
     fn get_gid(group: &str) -> io::Result<u32> {
-        let gr = unsafe { libc::getgrnam(CString::new(group.to_owned()).unwrap().as_ptr()) };
-        match !gr.is_null() {
-            true => Ok(unsafe { (*gr).gr_gid }),
-            false => Err(io::Error::new(
+        let cgroup = CString::new(group.to_owned()).unwrap();
+        let gr = unsafe { libc::getgrnam(cgroup.as_ptr()) };
+        if !gr.is_null() {
+            Ok(unsafe { (*gr).gr_gid })
+        } else {
+            Err(io::Error::new(
                 io::ErrorKind::InvalidData,
                 format!("No such group {}", group),
-            )),
+            ))
         }
     }
 
