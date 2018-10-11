@@ -65,8 +65,10 @@ pub fn nereond() -> Result<(), String> {
             key [fileset_file]
         }},
         option fileset {{
+            flags [takesvalue]
+            long fileset-env
             env NEREON_FILESET
-            hint FILE
+            hint FILESET
             usage "Fileset as environment variable"
             key [fileset_env]
         }}"#,
