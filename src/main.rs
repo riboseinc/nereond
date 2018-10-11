@@ -31,5 +31,8 @@ fn main() {
         .init()
         .unwrap();
 
-    nereond::nereond().ok();
+    if let Err(e) = nereond::nereond() {
+        eprintln!("{}", e);
+        ::std::process::exit(1);
+    }
 }
