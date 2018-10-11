@@ -1,7 +1,17 @@
 [package]
 name = "nereond"
+description = "Nereond is a configuration management daemon"
 version = "0.1.1"
 authors = ["John Hedges <john@drystone.co.uk>", "Ribose Inc. <open.source@ribose.com>"]
+repository = "https://github.com/riboseinc/nereond"
+license = "BSD-2-Clause"
+exclude = [
+    "ci/**",
+    "examples/**",
+    ".gitignore",
+    "Jenkinsfile",
+    ".travis.yml",
+    ]
 
 [dependencies]
 base64 = "0.6"
