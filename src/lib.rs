@@ -42,7 +42,7 @@ const AUTHORS: &str = env!("CARGO_PKG_AUTHORS");
 const LICENSE: &str = "BSD-2-Clause";
 const APPNAME: &str = env!("CARGO_PKG_NAME");
 
-#[derive(FromValue)]
+#[derive(Debug, FromValue)]
 struct Config {
     fileset_file: Option<String>,
     fileset_env: Option<String>,
@@ -74,7 +74,8 @@ pub fn nereond() -> Result<(), String> {
     );
 
     let config = nereon::configure::<Config, _, _>(&nos, env::args()).unwrap();
-
+    println!("{:?}", config);
+    println!("{:?}", env::var("NEREON_FILESET"));
     // get the fileset from file/env
     config
         .fileset_file
