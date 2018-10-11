@@ -62,13 +62,13 @@ pub fn nereond() -> Result<(), String> {
             env NEREON_FILESET_FILE
             hint FILE
             usage "File containing a nereon fileset"
-            node [fileset_file]
+            key [fileset_file]
         }},
         option fileset {{
             env NEREON_FILESET
             hint FILE
             usage "Fileset as environment variable"
-            node [fileset_env]
+            key [fileset_env]
         }}"#,
         AUTHORS, LICENSE, APPNAME, VERSION
     );
