@@ -85,7 +85,7 @@ pub fn nereond() -> Result<(), String> {
                     || Err("No fileset from args or environment.".to_owned()),
                     |s| {
                         base64::decode(&s)
-                            .map_err(|_| "Invalid base64 data in env[NEREON_FILESET]".to_owned())
+                            .map_err(|_| format!("Invalid base64 data in env[NEREON_FILESET] {}", s))
                             .and_then(|bs| {
                                 String::from_utf8(bs).map_err(|_| {
                                     "Invalid utf8 data in env[NEREON_FILESET]".to_owned()
