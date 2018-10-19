@@ -132,8 +132,8 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "nereon"
-version = "0.4.2"
-source = "git+https://github.com/riboseinc/rust-nereon?rev=32f95cc#32f95cc56595c1426e55ee74b3b3a77de9fd4bce"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
 dependencies = [
  "clap 2.32.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "lazy_static 1.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
@@ -159,7 +159,7 @@ dependencies = [
  "base64 0.6.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "libc 0.2.43 (registry+https://github.com/rust-lang/crates.io-index)",
  "log 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)",
- "nereon 0.4.2 (git+https://github.com/riboseinc/rust-nereon?rev=32f95cc)",
+ "nereon 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)",
  "nereon_derive 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "stderrlog 0.4.1 (registry+https://github.com/rust-lang/crates.io-index)",
 ]
@@ -417,7 +417,7 @@ dependencies = [
 "checksum libc 0.2.43 (registry+https://github.com/rust-lang/crates.io-index)" = "76e3a3ef172f1a0b9a9ff0dd1491ae5e6c948b94479a3021819ba7d860c8645d"
 "checksum log 0.4.5 (registry+https://github.com/rust-lang/crates.io-index)" = "d4fcce5fa49cc693c312001daf1d13411c4a5283796bac1084299ea3e567113f"
 "checksum maplit 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)" = "08cbb6b4fef96b6d77bfc40ec491b1690c779e77b05cd9f07f787ed376fd4c43"
-"checksum nereon 0.4.2 (git+https://github.com/riboseinc/rust-nereon?rev=32f95cc)" = "<none>"
+"checksum nereon 0.4.3 (registry+https://github.com/rust-lang/crates.io-index)" = "af2eb63f45019423b5a5d948d3eb97596a9ef063296920dfd19e3b970101d17e"
 "checksum nereon_derive 0.4.2 (registry+https://github.com/rust-lang/crates.io-index)" = "58034b763474813216f2248f3bace22bd1b8cf5e887b31a8719d0b808176b767"
 "checksum num-integer 0.1.39 (registry+https://github.com/rust-lang/crates.io-index)" = "e83d528d2677f0518c570baf2b7abdcf0cd2d248860b68507bdcb3e91d4c0cea"
 "checksum num-traits 0.2.6 (registry+https://github.com/rust-lang/crates.io-index)" = "0b3a5d7cc97d6d30d8b9bc8fa19bf45349ffe46241e8816f50f62f6d6aaabee1"
