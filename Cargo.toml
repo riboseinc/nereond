@@ -17,6 +17,6 @@ exclude = [
 base64 = "0.6"
 libc = "0.2"
 log = "0.4"
-nereon = "0.4"
+nereon = {version = "0.4", git = "https://github.com/riboseinc/nereond" rev = "32f95cc"}
 nereon_derive = "0.4"
 stderrlog = "0.4"
