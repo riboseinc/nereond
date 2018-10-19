@@ -60,7 +60,15 @@ fn get_installer() -> Box<Fn(&str) -> bool> {
                 .unwrap_or(false)
         })
     } else {
-        Box::new(|_| false)
+        Box::new(|_| {
+            eprintln!(
+                "Couldn't find package installer in {}",
+                env::var_os("PATH")
+                    .map(|p| p.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "".to_owned())
+            );
+            false
+        })
     }
 }
 
