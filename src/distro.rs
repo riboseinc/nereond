@@ -62,7 +62,7 @@ fn get_installer() -> Box<Fn(&str) -> bool> {
     } else {
         Box::new(|_| {
             eprintln!(
-                "Couldn't find package installer in {}",
+                "Couldn't find package installer. PATH={}",
                 env::var_os("PATH")
                     .map(|p| p.to_string_lossy().into_owned())
                     .unwrap_or_else(|| "".to_owned())
