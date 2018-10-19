@@ -32,6 +32,7 @@ extern crate nereon_derive;
 extern crate log;
 
 mod file;
+mod distro;
 
 use nereon::{FromValue, Value};
 use std::env;
@@ -44,6 +45,7 @@ const APPNAME: &str = env!("CARGO_PKG_NAME");
 
 #[derive(Debug, FromValue)]
 struct Config {
+    packages: Vec<String>,
     fileset_file: Option<String>,
     fileset_env: Option<String>,
 }
@@ -71,11 +73,22 @@ pub fn nereond() -> Result<(), String> {
             hint FILESET
             usage "Fileset as environment variable"
             key [fileset_env]
+        }},
+        option packages {{
+            flags [takesvalue, multiple]
+            long package
+            short p
+            hint PACKAGE
+            usage "Install package using apt, yum etc."
+            key [packages]
         }}"#,
         AUTHORS, LICENSE, APPNAME, VERSION
     );
 
     let config = nereon::configure::<Config, _, _>(&nos, env::args()).unwrap();
+
+    // install packages
+    distro::install_packages(&config.packages)?;
 
     // get the fileset from file/env
     config
